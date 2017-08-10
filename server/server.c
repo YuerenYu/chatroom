@@ -4,7 +4,7 @@
 #       Author:wozaizhe55
 #         mail:
 #   Creat Time: 2017-07-31 12:36:41
-#Last modified: 2017-08-07 13:37:41
+#Last modified: 2017-08-10 12:57:12
 #**********************************
 */
 
@@ -16,6 +16,7 @@
 #include<sys/msg.h>
 #include<sys/ipc.h>
 #include"chat.h"
+#include<time.h>
 
 #define MAX_TEXT 512
 #define TRUE 1
@@ -38,13 +39,14 @@ int main(){
 	NODE_RETURN *insert_head;
 	int msg_type = 10, msg_rtype, msg_rcvtype = 12, msg_ptype =13;
 	key_t key;
+	struct tm *p_time;
+	time_t timep;
+	int count = 0;
 	char *msgpath = "~/Desktop";
 	key = ftok(msgpath, 1);
-	//管道,用于父进程向子进程发送链表头结点地址
-	int fd[2];
 	FILE *fp;
-	int *write_fd = &fd[1];
-	int *read_fd = &fd[2];
+	fp = fopen("./config.txt","w");
+	fclose(fp);
 	//printf("test\n");
 	msg_id = msgget(key, 0666 | IPC_CREAT);
 	if(msg_id == -1){
@@ -58,7 +60,8 @@ int main(){
 //	if(msgrcv(msg_id, msgbuf, sizeof(MSGBUF), msg_type, 0) == -1){
 //		printf("msgreceive 失败\n");
 //	}
-	//printf("msg_id:%d\n", msg_id);
+
+	printf("---服务开启成功等待客户端连接---\n");
 	pid_t jpid;
 	jpid = fork();
 	if(jpid < 0){
@@ -66,41 +69,94 @@ int main(){
 		return -1;
 	}else if(jpid > 0){
 		//父进程监听申请
+		printf("----");
+		char text[50]; //用于转发客户端连接服务器的状态
+		
 		while(TRUE){
+			int temp;
 			msgbuf = ReceiveRequest(msg_id, msg_type);
 			if(NULL == msgbuf){
 				printf("接收消息失败\n");
 				return 0;
 			}
-			insert_head = InsertNode(head, msgbuf->username, msgbuf->pid);
-			head = insert_head->head;
-			msg_rtype = insert_head->mtype;
-			SendMtype(msg_id, msg_rtype);	//返回申请端口:msg_rtype
-			//SendHead(msg_id, msg_ptype, head);
-			fp = fopen("./config.txt","w");
-			p = head->next;
-			int count = 0;
-			while(p){
-				fprintf(fp,"%d\t", p->mtype);
-				p = p->next;
-				++count;
+			if(msgbuf->flag){
+				//客户端申请加入聊天
+				sprintf(text, "-----%s 加入聊天-----\n", msgbuf->username);
+
+				//群发加入聊天的状态
+				fp = fopen("./config.txt","r");
+				while(!feof(fp)){
+					fscanf(fp, "%d", &temp);
+					if(!feof(fp)){
+						SendMsg(msg_id, temp, 0, "System", text);
+					}
+				}
+				fclose(fp);
+
+				//插入节点	
+				insert_head = InsertNode(head, msgbuf->username);
+				head = insert_head->head;
+				msg_rtype = insert_head->mtype;
+				SendMtype(msg_id, msg_rtype);	//返回申请端口:msg_rtype
+				//写入消息类型
+				fp = fopen("./config.txt","w");
+				p = head->next;
+				count = 0;
+				while(p){
+					//printf("写入消息类型%d\n", p->mtype);
+					fprintf(fp,"%d\t", p->mtype);
+					p = p->next;
+					++count;
+				}
+				fclose(fp);
+				printf("-----%s 加入聊天-当前共%d人-----\n", msgbuf->username, count);
+			}else{
+				int c_flag;
+				//发送退出聊天信息,同时让退出的客户端监听进程退出
+				sprintf(text, "-----%s 退出聊天-----\n", msgbuf->username);
+				//群发退出聊天状态
+				fp = fopen("./config.txt","r");
+				while(!feof(fp)){
+					fscanf(fp, "%d", &temp);
+					if(!feof(fp)){
+						if(temp == msgbuf->m_type){
+							c_flag = 1;
+						}else{
+							c_flag = 0;
+						}
+					SendMsg(msg_id, temp, c_flag, "System", text);	
+					}
+				}
+				fclose(fp);
+
+				head = DeleteNode(head, msgbuf->m_type);
+				//根据消息类型来删除对应节点
+				fp = fopen("./config.txt","w");
+				p = head->next;
+				count = 0;
+				while(p){
+					fprintf(fp,"%d\t", p->mtype);
+					p = p->next;
+					++count;
+				}
+				fclose(fp);
+				printf("-----%s 退出聊天-当前共%d人-----\n", msgbuf->username, count);
 			}
-			fclose(fp);
-			printf("----%s 加入聊天当前共%d人-----\n", msgbuf->username, count);
 		}
 	}else{
 		//子进程监听聊天信息
 		int temp;
 		while(TRUE){
 			message = ReceiveMsg(msg_id, msg_rcvtype);
-			printf("%s(%d):\n\t%s\n", message->username, message->pid, message->text);
+			printf("%s(%d):\n\t%s\n", message->username, message->m_type, message->text);
 			//群发消息模块
 			fp = fopen("./config.txt", "r");
 			while(!feof(fp)){
 				//遍历文件里的接收消息类型,转发消息
 				fscanf(fp, "%d", &temp);
+				//printf("----%d\n", temp);
 				if(!feof(fp)){
-					SendMsg(msg_id, temp, message->pid, message->username, message->text);
+					SendMsg(msg_id, temp, message->m_type, message->username, message->text);
 				}
 			}
 			fclose(fp);

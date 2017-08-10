@@ -4,7 +4,7 @@
 #       Author:wozaizhe55
 #         mail:
 #   Creat Time: 2017-08-04 14:45:38
-#Last modified: 2017-08-05 22:36:44
+#Last modified: 2017-08-10 12:58:12
 #**********************************
 */
 
@@ -16,20 +16,19 @@
 #include<sys/ipc.h>
 #include<errno.h>
 #include"chat.h"
-//typedef struct{
-//	int mtype;
-//	pid_t pid;
-//	char *username;
-//}MSGBUF;
+#include<time.h>
+
 #define SIZE sizeof(MSGBUF)
 
-int SendRequest(int msg_id, int mtype, pid_t pid, char *username){
+int SendRequest(int msg_id, int mtype, int m_type, char *username, int flag){
+	//flag为1表示申请加入聊天,为0表示申请退出聊天
 	MSGBUF *msgbuf;
 	msgbuf = (MSGBUF *)malloc(SIZE);
 	msgbuf->mtype = mtype;
-	msgbuf->pid = pid;
+	msgbuf->m_type = m_type;
 	strcpy(msgbuf->username, username);
-	
+	msgbuf->flag = flag;
+
 	if(msgsnd(msg_id, msgbuf, SIZE, 0) == -1){
 		printf("msgsnd failer\n");
 		return 0;
@@ -50,7 +49,7 @@ MSGBUF *ReceiveRequest(int msg_id, int mtype){
 	return msgbuf;
 }
 
-NODE_RETURN *InsertNode(LINKLIST head, char *username, pid_t pid){
+NODE_RETURN *InsertNode(LINKLIST head, char *username){
 	int i = 15;		//客户端接收信息端口 起始为15;
 	LINKLIST p, p_pre, nnode;
 	NODE_RETURN *r_node;
@@ -65,7 +64,7 @@ NODE_RETURN *InsertNode(LINKLIST head, char *username, pid_t pid){
 		nnode = (LINKLIST)malloc(sizeof(NODE_LINKLIST));
 		nnode->mtype = i;
 		strcpy(nnode->username, username);
-		nnode->pid = pid;
+		nnode->m_type = i;
 		//插入节点,在链表末尾
 		nnode->next = NULL;
 		p_pre->next = nnode;
@@ -73,7 +72,7 @@ NODE_RETURN *InsertNode(LINKLIST head, char *username, pid_t pid){
 		nnode = (LINKLIST)malloc(sizeof(NODE_LINKLIST));
 		nnode->mtype = i;
 		strcpy(nnode->username, username);
-		nnode->pid = pid;
+		nnode->m_type = i;
 		//插入节点,在p_pre之后
 		nnode->next = p_pre->next;
 		p_pre->next = nnode;
@@ -85,6 +84,24 @@ NODE_RETURN *InsertNode(LINKLIST head, char *username, pid_t pid){
 
 	return r_node;
 }
+
+LINKLIST DeleteNode(LINKLIST head, int mtype){
+	LINKLIST p, p_pre;
+	p_pre = head;
+	p = head->next;
+	while(p){
+		//printf("p->mtype = %d, mtype = %d\n", p->mtype, mtype);
+		if(p->m_type == mtype){
+			p_pre->next = p->next;
+			free(p);
+			return head;
+		}
+		p_pre = p;
+		p = p->next;
+	}
+	return head;
+}
+
 
 int SendMtype(int msg_id, int mtype){
 	MTYPE *s_mtype;
@@ -108,18 +125,18 @@ int ReceiveMtype(int msg_id, int mtype){
 	return r_mtype->r_mtype;
 }
 
-int SendMsg(int msg_id, int mtype, pid_t pid, char *username, char *text){
+int SendMsg(int msg_id, int mtype, int m_type, char *username, char *text){
 	MESSAGE message;
 	message.mtype = mtype;
-	message.pid = pid;
+	message.m_type = m_type;
 	strcpy(message.username, username);
 	strcpy(message.text, text);
-	strcpy(message.stime, ""); //将消息发送时间置空
+	strcpy(message.stime, ""); //时间置空
 	if(msgsnd(msg_id, &message, sizeof(MESSAGE), 0) == -1){
 		printf("message发送失败\n");
 		return -1;
 	}
-	//printf("message发送成功\n");
+	//printf("message发送成功,消息类型%d\n", mtype);
 	return 0;
 }
 
